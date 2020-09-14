@@ -1,0 +1,117 @@
+builder:
+  track: dev
+
+labels:
+  app-group: estafette-ci
+  team: estafette-team
+  language: golang
+
+version:
+  semver:
+    major: 0
+    minor: 1
+    patch: 1
+    labelTemplate: '{{branch}}-{{auto}}'
+    releaseBranch: 0.1.1
+
+stages:
+  build:
+    image: golang:1.15.1-alpine3.12
+    env:
+      CGO_ENABLED: 0
+      GOGC: off
+    commands:
+    - go vet ./...
+    - go test -failfast -vet=off ./...
+    - GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags "-X github.com/estafette/estafette-gcp-network-planner/cmd.appgroup=${ESTAFETTE_LABEL_APP_GROUP} -X github.com/estafette/estafette-gcp-network-planner/cmd.app=${ESTAFETTE_GIT_NAME} -X github.com/estafette/estafette-gcp-network-planner/cmd.version=${ESTAFETTE_BUILD_VERSION} -X github.com/estafette/estafette-gcp-network-planner/cmd.revision=${ESTAFETTE_GIT_REVISION} -X github.com/estafette/estafette-gcp-network-planner/cmd.branch=${ESTAFETTE_GIT_BRANCH} -X github.com/estafette/estafette-gcp-network-planner/cmd.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-linux-amd64 .
+    - GOOS=windows GOARCH=amd64 go build -a -installsuffix cgo -ldflags "-X github.com/estafette/estafette-gcp-network-planner/cmd.appgroup=${ESTAFETTE_LABEL_APP_GROUP} -X github.com/estafette/estafette-gcp-network-planner/cmd.app=${ESTAFETTE_GIT_NAME} -X github.com/estafette/estafette-gcp-network-planner/cmd.version=${ESTAFETTE_BUILD_VERSION} -X github.com/estafette/estafette-gcp-network-planner/cmd.revision=${ESTAFETTE_GIT_REVISION} -X github.com/estafette/estafette-gcp-network-planner/cmd.branch=${ESTAFETTE_GIT_BRANCH} -X github.com/estafette/estafette-gcp-network-planner/cmd.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-windows-amd64.exe .
+    - GOOS=darwin GOARCH=amd64 go build -a -installsuffix cgo -ldflags "-X github.com/estafette/estafette-gcp-network-planner/cmd.appgroup=${ESTAFETTE_LABEL_APP_GROUP} -X github.com/estafette/estafette-gcp-network-planner/cmd.app=${ESTAFETTE_GIT_NAME} -X github.com/estafette/estafette-gcp-network-planner/cmd.version=${ESTAFETTE_BUILD_VERSION} -X github.com/estafette/estafette-gcp-network-planner/cmd.revision=${ESTAFETTE_GIT_REVISION} -X github.com/estafette/estafette-gcp-network-planner/cmd.branch=${ESTAFETTE_GIT_BRANCH} -X github.com/estafette/estafette-gcp-network-planner/cmd.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-darwin-amd64 .
+
+  create-dev-github-release:
+    image: extensions/github-release:dev
+    ignoreMissingMilestone: true
+    prerelease: true
+    assets:
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-linux-amd64
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-windows-amd64.exe
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-darwin-amd64
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' != '${ESTAFETTE_BUILD_VERSION}'
+
+  create-stable-github-release:
+    image: extensions/github-release:dev
+    assets:
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-linux-amd64
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-windows-amd64.exe
+    - ./binaries/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-darwin-amd64
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' == '${ESTAFETTE_BUILD_VERSION}'
+
+  clone-dev-tap:
+    image: extensions/git-clone:dev
+    repo: homebrew-dev
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' != '${ESTAFETTE_BUILD_VERSION}'
+
+  clone-stable-tap:
+    image: extensions/git-clone:dev
+    repo: homebrew-stable
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' == '${ESTAFETTE_BUILD_VERSION}'
+
+  create-dev-brew-formula:
+    image: extensions/brew:dev
+    formula: gcp-network-planner-dev
+    description: The command-line interface for Estafette - The resilient and cloud-native CI/CD platform (dev track)
+    homepage: https://estafette.io
+    binaryURL: https://github.com/estafette/estafette-gcp-network-planner/releases/download/v${ESTAFETTE_BUILD_VERSION}/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-darwin-amd64.zip
+    tapRepoDir: homebrew-dev
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' != '${ESTAFETTE_BUILD_VERSION}'
+
+  create-stable-brew-formula:
+    image: extensions/brew:dev
+    formula: gcp-network-planner
+    description: The command-line interface for Estafette - The resilient and cloud-native CI/CD platform
+    homepage: https://estafette.io
+    binaryURL: https://github.com/estafette/estafette-gcp-network-planner/releases/download/v${ESTAFETTE_BUILD_VERSION}/${ESTAFETTE_GIT_NAME}-v${ESTAFETTE_BUILD_VERSION}-darwin-amd64.zip
+    tapRepoDir: homebrew-stable
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' == '${ESTAFETTE_BUILD_VERSION}'
+
+  push-dev-to-tap:
+    image: golang:1.15.1-alpine3.12
+    commands:
+    - apk add git
+    - cd homebrew-dev
+    - git config user.email 'bot@estafette.io'
+    - git config user.name 'estafette.bo'
+    - git status
+    - git add --all
+    - git commit --allow-empty -m "estafette-dev v${ESTAFETTE_BUILD_VERSION}"
+    - git push origin master
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' != '${ESTAFETTE_BUILD_VERSION}'
+
+  push-stable-to-tap:
+    image: golang:1.15.1-alpine3.12
+    commands:
+    - apk add git
+    - cd homebrew-stable
+    - git config user.email 'bot@estafette.io'
+    - git config user.name 'estafette.bo'
+    - git status
+    - git add --all
+    - git commit --allow-empty -m "estafette v${ESTAFETTE_BUILD_VERSION}"
+    - git push origin master
+    when:
+      status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' == '${ESTAFETTE_BUILD_VERSION}'
+
+  slack-notify:
+    image: extensions/slack-build-status:dev
+    workspace: estafette
+    channels:
+    - '#build-status'
+    when:
+      status == 'succeeded' ||
+      status == 'failed'

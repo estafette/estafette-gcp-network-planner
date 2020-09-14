@@ -1,0 +1,85 @@
+package network
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestRangeConfigValidate(t *testing.T) {
+
+	t.Run("ReturnsNoErrorsWhenRangeConfigIsValid", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.True(t, valid)
+		assert.Equal(t, 0, len(errors))
+	})
+
+	t.Run("ReturnsErrorWhenTypeIsUnknown", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.Type = TypeUnknown
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.True(t, strings.HasPrefix(errors[0], "Value for field type is unknown"))
+	})
+
+	t.Run("ReturnsErrorWhenRangeTypeIsUnknown", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.RangeType = RangeTypeUnknown
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.True(t, strings.HasPrefix(errors[0], "Value for field ip_cidr_range_type is unknown"))
+	})
+
+	t.Run("ReturnsErrorWhenNetworkIsInvalidCIDR", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "192.0.2.0/388"
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.Equal(t, "Value for field network is invalid: invalid CIDR address: 192.0.2.0/388", errors[0])
+	})
+
+	t.Run("ReturnsErrorWhenSubnetMaskIsLessThanNetworkIsInvalidCIDR", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = 13
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.Equal(t, "Value for field subnet_mask is less than the network mask: 13 < 14", errors[0])
+	})
+}
+
+func getValidRangeConfig() RangeConfig {
+	return RangeConfig{
+		Type:        TypeNode,
+		Region:      "europe-west1",
+		RangeType:   RangeTypePrimary,
+		NetworkCIDR: "172.28.0.0/14",
+		SubnetMask:  21,
+	}
+}
