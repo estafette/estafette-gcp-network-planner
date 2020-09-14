@@ -72,6 +72,107 @@ func TestRangeConfigValidate(t *testing.T) {
 		assert.Equal(t, 1, len(errors))
 		assert.Equal(t, "Value for field subnet_mask is less than the network mask: 13 < 14", errors[0])
 	})
+
+	t.Run("ReturnsErrorWhenSubnetMaskIsLessThanZero", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = -1
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.Equal(t, "Value for field subnet_mask is invalid; it needs to be between 14 and 32", errors[0])
+	})
+
+	t.Run("ReturnsErrorWhenSubnetMaskMoreThan32", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = -1
+
+		// act
+		valid, _, errors := rangeConfig.Validate()
+
+		assert.False(t, valid)
+		assert.Equal(t, 1, len(errors))
+		assert.Equal(t, "Value for field subnet_mask is invalid; it needs to be between 14 and 32", errors[0])
+	})
+}
+
+func TestContainsCIDR(t *testing.T) {
+
+	t.Run("ReturnsFalseIfSubnetworkCIDRIsNotContainedByNetworkCIDR", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		subnetworkCIDR := "172.24.0.0/22"
+
+		// act
+		contains, err := rangeConfig.ContainsCIDR(subnetworkCIDR)
+
+		assert.Nil(t, err)
+		assert.False(t, contains)
+	})
+
+	t.Run("ReturnsTrueIfSubnetworkCIDRIsContainedByNetworkCIDR", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		subnetworkCIDR := "172.28.0.0/16"
+
+		// act
+		contains, err := rangeConfig.ContainsCIDR(subnetworkCIDR)
+
+		assert.Nil(t, err)
+		assert.True(t, contains)
+	})
+}
+
+func TestGetMaxSubnetworkRanges(t *testing.T) {
+
+	t.Run("Returns2IfMaskHasDifferenceOf1", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = 15
+
+		// act
+		maxSubnetworkRanges := rangeConfig.GetMaxSubnetworkRanges()
+
+		assert.Equal(t, 2, maxSubnetworkRanges)
+	})
+
+	t.Run("Returns4IfMaskHasDifferenceOf2", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = 16
+
+		// act
+		maxSubnetworkRanges := rangeConfig.GetMaxSubnetworkRanges()
+
+		assert.Equal(t, 4, maxSubnetworkRanges)
+	})
+}
+
+func TestGetAvailableSubnetworkRanges(t *testing.T) {
+
+	t.Run("Returns2RangesIfMaskHasDifferenceOf1", func(t *testing.T) {
+
+		rangeConfig := getValidRangeConfig()
+		rangeConfig.NetworkCIDR = "172.28.0.0/14"
+		rangeConfig.SubnetMask = 15
+
+		// act
+		availableSubnetworkRanges := rangeConfig.GetAvailableSubnetworkRanges()
+
+		assert.Equal(t, 2, len(availableSubnetworkRanges))
+		assert.Equal(t, "172.28.0.0/15", availableSubnetworkRanges[0].String())
+		assert.Equal(t, "172.30.0.0/15", availableSubnetworkRanges[1].String())
+	})
 }
 
 func getValidRangeConfig() RangeConfig {

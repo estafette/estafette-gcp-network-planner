@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"strings"
 
 	networkv1 "github.com/estafette/estafette-gcp-network-planner/api/network/v1"
 	"github.com/estafette/estafette-gcp-network-planner/clients/gcp"
 	"github.com/rs/zerolog/log"
+	computev1 "google.golang.org/api/compute/v1"
 )
 
 //go:generate mockgen -package=planner -destination ./mock.go -source=service.go
 type Service interface {
 	LoadConfig(ctx context.Context) (config *networkv1.Config, err error)
-	Suggest(ctx context.Context, filter string) (rangeConfigs []networkv1.RangeConfig, err error)
+	Suggest(ctx context.Context, region, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error)
+	SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error)
 }
 
 func NewService(ctx context.Context, gcpClient gcp.Client, configPath string) (Service, error) {
@@ -40,7 +44,7 @@ func (s *service) LoadConfig(ctx context.Context) (config *networkv1.Config, err
 			return
 		}
 	} else {
-		log.Info().Msgf("Reading config from %v...", s.configPath)
+		log.Info().Msg("Reading config from embedded config.json file...")
 		data, err = networkv1.Asset("config.json")
 		if err != nil {
 			return
@@ -55,7 +59,7 @@ func (s *service) LoadConfig(ctx context.Context) (config *networkv1.Config, err
 	return
 }
 
-func (s *service) Suggest(ctx context.Context, filter string) (rangeConfigs []networkv1.RangeConfig, err error) {
+func (s *service) Suggest(ctx context.Context, region, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error) {
 
 	config, err := s.LoadConfig(ctx)
 	if err != nil {
@@ -64,7 +68,7 @@ func (s *service) Suggest(ctx context.Context, filter string) (rangeConfigs []ne
 
 	valid, _, errors := config.Validate()
 	if !valid {
-		return rangeConfigs, fmt.Errorf("Config at path %v is not valid: %v", s.configPath, errors)
+		return subnetsMap, fmt.Errorf("Config at path %v is not valid: %v", s.configPath, errors)
 	}
 
 	projects, err := s.gcpClient.GetProjectByLabels(ctx, []string{filter})
@@ -77,7 +81,84 @@ func (s *service) Suggest(ctx context.Context, filter string) (rangeConfigs []ne
 		return
 	}
 
-	log.Info().Interface("subnetworks", subnetworks).Msgf("Retrieved all subnetworks for projects with filter %v", filter)
+	// set default network type
+	if len(networkTypes) == 0 {
+		networkTypes = []networkv1.Type{
+			networkv1.TypeNode,
+		}
+	}
+
+	// get suggested subnets
+	subnetsMap = map[networkv1.Type]*net.IPNet{}
+	for _, t := range networkTypes {
+		subnetRange, err := s.SuggestSingleNetworkRange(ctx, config.RangeConfigs, subnetworks, region, t)
+		if err != nil {
+			return subnetsMap, err
+		}
+		subnetsMap[t] = subnetRange
+	}
+
+	// log suggested subnets:
+	for k, v := range subnetsMap {
+		log.Info().Msgf("%v - %v", k, v)
+	}
 
 	return
+}
+
+func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
+
+	// find range config for region and network type
+	filteredRangeConfigs := []networkv1.RangeConfig{}
+	for _, rc := range rangeConfigs {
+		if rc.Type == networkType && rc.Region == region {
+			filteredRangeConfigs = append(filteredRangeConfigs, rc)
+		}
+	}
+
+	if len(filteredRangeConfigs) == 0 {
+		return subnetworkRange, fmt.Errorf("No ranges have been configured for type %v and region %v, can't suggest a subnetwork range", networkType, region)
+	}
+
+	if len(filteredRangeConfigs) > 1 {
+		return subnetworkRange, fmt.Errorf("Multiple ranges have been configured for type %v and region %v, can't suggest a subnetwork range", networkType, region)
+	}
+
+	rangeConfig := rangeConfigs[0]
+
+	// filter subnetworks on whether they're contained in the range config network CIDR
+	filteredSubnetworkCIDRs := []string{}
+	for _, sn := range subnetworks {
+		contains, err := rangeConfig.ContainsCIDR(sn.IpCidrRange)
+		if err != nil {
+			return subnetworkRange, err
+		}
+		if contains && strings.HasSuffix(sn.Region, "/"+rangeConfig.Region) {
+			filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
+		}
+	}
+	// get first free subnetwork range from rangeconfig
+	availableSubnetworkRanges := rangeConfig.GetAvailableSubnetworkRanges()
+	for _, subnetRange := range availableSubnetworkRanges {
+		// check if it's in use
+		rangeIsInUse := false
+		for _, snCIDR := range filteredSubnetworkCIDRs {
+			subnetworkIP, _, err := net.ParseCIDR(snCIDR)
+			if err != nil {
+				return subnetworkRange, err
+			}
+
+			if subnetRange.Contains(subnetworkIP) {
+				log.Debug().Msgf("Range %v is already used by subnet with cidr %v", subnetRange, snCIDR)
+				rangeIsInUse = true
+				break
+			}
+		}
+
+		if !rangeIsInUse {
+			return subnetRange, nil
+		}
+	}
+
+	return subnetworkRange, fmt.Errorf("All of the possible %v subnets of range %v are already in use", len(availableSubnetworkRanges), rangeConfig.NetworkCIDR)
 }

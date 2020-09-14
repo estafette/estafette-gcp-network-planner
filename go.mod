@@ -3,6 +3,7 @@ module github.com/estafette/estafette-gcp-network-planner
 go 1.15
 
 require (
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/estafette/estafette-foundation v0.0.61
 	github.com/golang/mock v1.4.4
 	github.com/rs/zerolog v1.19.0

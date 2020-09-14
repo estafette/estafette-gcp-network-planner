@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	region string
 	filter string
 )
 
@@ -17,7 +18,8 @@ func init() {
 	rootCmd.AddCommand(suggestCmd)
 
 	// command-specific flags
-	suggestCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter for limiting projects to retrieve existing network ranges for, see https://cloud.google.com/resource-manager/reference/rest/v1/projects/list#query-parameters")
+	suggestCmd.Flags().StringVar(&region, "region", "europe-west1", "Region to request subnetwork range for")
+	suggestCmd.Flags().StringVar(&filter, "filter", "", "Filter for limiting projects to retrieve existing network ranges for, see https://cloud.google.com/resource-manager/reference/rest/v1/projects/list#query-parameters")
 }
 
 var suggestCmd = &cobra.Command{
@@ -40,7 +42,7 @@ var suggestCmd = &cobra.Command{
 			return err
 		}
 
-		_, err = plannerService.Suggest(ctx, filter)
+		_, err = plannerService.Suggest(ctx, region, filter)
 		if err != nil {
 			return err
 		}

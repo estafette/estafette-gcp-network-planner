@@ -8,6 +8,8 @@ import (
 	context "context"
 	network "github.com/estafette/estafette-gcp-network-planner/api/network/v1"
 	gomock "github.com/golang/mock/gomock"
+	compute "google.golang.org/api/compute/v1"
+	net "net"
 	reflect "reflect"
 )
 
@@ -50,16 +52,36 @@ func (mr *MockServiceMockRecorder) LoadConfig(ctx interface{}) *gomock.Call {
 }
 
 // Suggest mocks base method
-func (m *MockService) Suggest(ctx context.Context, filter string) ([]network.RangeConfig, error) {
+func (m *MockService) Suggest(ctx context.Context, filter, region string, rangeTypes ...network.RangeType) (map[network.Type]*net.IPNet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Suggest", ctx, filter)
-	ret0, _ := ret[0].([]network.RangeConfig)
+	varargs := []interface{}{ctx, filter, region}
+	for _, a := range rangeTypes {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "Suggest", varargs...)
+	ret0, _ := ret[0].(map[network.Type]*net.IPNet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Suggest indicates an expected call of Suggest
-func (mr *MockServiceMockRecorder) Suggest(ctx, filter interface{}) *gomock.Call {
+func (mr *MockServiceMockRecorder) Suggest(ctx, filter, region interface{}, rangeTypes ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suggest", reflect.TypeOf((*MockService)(nil).Suggest), ctx, filter)
+	varargs := append([]interface{}{ctx, filter, region}, rangeTypes...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suggest", reflect.TypeOf((*MockService)(nil).Suggest), varargs...)
+}
+
+// SuggestSingleNetworkRange mocks base method
+func (m *MockService) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []network.RangeConfig, subnetworks []*compute.Subnetwork, region string, networkType network.Type) (*net.IPNet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SuggestSingleNetworkRange", ctx, rangeConfigs, subnetworks, region, networkType)
+	ret0, _ := ret[0].(*net.IPNet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SuggestSingleNetworkRange indicates an expected call of SuggestSingleNetworkRange
+func (mr *MockServiceMockRecorder) SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, region, networkType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuggestSingleNetworkRange", reflect.TypeOf((*MockService)(nil).SuggestSingleNetworkRange), ctx, rangeConfigs, subnetworks, region, networkType)
 }
