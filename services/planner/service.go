@@ -31,11 +31,20 @@ type service struct {
 
 func (s *service) LoadConfig(ctx context.Context) (config *networkv1.Config, err error) {
 
-	log.Info().Msgf("Reading config from %v...", s.configPath)
+	var data []byte
 
-	data, err := ioutil.ReadFile(s.configPath)
-	if err != nil {
-		return
+	if s.configPath != "" {
+		log.Info().Msgf("Reading config from %v...", s.configPath)
+		data, err = ioutil.ReadFile(s.configPath)
+		if err != nil {
+			return
+		}
+	} else {
+		log.Info().Msgf("Reading config from %v...", s.configPath)
+		data, err = networkv1.Asset("config.json")
+		if err != nil {
+			return
+		}
 	}
 
 	err = json.Unmarshal(data, &config)

@@ -22,8 +22,9 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var (
-	verbose     bool
-	concurrency int
+	verbose        bool
+	concurrency    int
+	configFilePath string
 
 	rootCmd = &cobra.Command{
 		Use:   "gcp-network-planner",
@@ -51,4 +52,5 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", 5, "level of concurrency")
+	rootCmd.PersistentFlags().StringVarP(&configFilePath, "config-file", "f", "", "path to config file")
 }

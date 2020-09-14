@@ -35,7 +35,7 @@ var suggestCmd = &cobra.Command{
 		}
 
 		// init planner service
-		plannerService, err := planner.NewService(ctx, gcpClient, "config.json")
+		plannerService, err := planner.NewService(ctx, gcpClient, configFilePath)
 		if err != nil {
 			return err
 		}

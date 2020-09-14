@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/estafette/estafette-foundation v0.0.61
+	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/golang/mock v1.4.4
 	github.com/rs/zerolog v1.19.0
 	github.com/spf13/cobra v1.0.0
