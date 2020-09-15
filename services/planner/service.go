@@ -18,7 +18,7 @@ import (
 type Service interface {
 	LoadConfig(ctx context.Context) (config *networkv1.Config, err error)
 	Suggest(ctx context.Context, region, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error)
-	SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error)
+	SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error)
 }
 
 func NewService(ctx context.Context, gcpClient gcp.Client, configPath string) (Service, error) {
@@ -81,6 +81,11 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 		return
 	}
 
+	routes, err := s.gcpClient.GetProjectRoutes(ctx, projects)
+	if err != nil {
+		return
+	}
+
 	// set default network type
 	if len(networkTypes) == 0 {
 		networkTypes = []networkv1.Type{
@@ -95,7 +100,7 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 	// get suggested subnets
 	subnetsMap = map[networkv1.Type]*net.IPNet{}
 	for _, t := range networkTypes {
-		subnetRange, err := s.SuggestSingleNetworkRange(ctx, config.RangeConfigs, subnetworks, region, t)
+		subnetRange, err := s.SuggestSingleNetworkRange(ctx, config.RangeConfigs, subnetworks, routes, region, t)
 		if err != nil {
 			return subnetsMap, err
 		}
@@ -110,9 +115,9 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 	return
 }
 
-func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
+func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
 
-	log.Debug().Msgf("Suggesting subnetwork range for region %v and network type %v (with %v range configs and %v subnetworks)...", region, networkType, len(rangeConfigs), len(subnetworks))
+	log.Debug().Msgf("Suggesting subnetwork range for region %v and network type %v (with %v range configs and %v subnetworks and %v routes)...", region, networkType, len(rangeConfigs), len(subnetworks), len(routes))
 
 	// find range config for region and network type
 	filteredRangeConfigs := []networkv1.RangeConfig{}
@@ -135,7 +140,6 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 	// filter subnetworks on whether they're contained in the range config network CIDR
 	filteredSubnetworkCIDRs := []string{}
 	for _, sn := range subnetworks {
-
 		if !strings.HasSuffix(sn.Region, "/"+rangeConfig.Region) {
 			continue
 		}
@@ -161,14 +165,25 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 				}
 			}
 		}
-
 	}
-
 	log.Debug().Msgf("Filtered subnetworks down to %v applicable subnetworks", len(filteredSubnetworkCIDRs))
+
+	// filter routes on whether they're contained in the range config network CIDR
+	filteredRouteCIDRs := []string{}
+	for _, r := range routes {
+		contains, err := rangeConfig.ContainsCIDR(r.DestRange)
+		if err != nil {
+			return subnetworkRange, err
+		}
+		if contains {
+			filteredRouteCIDRs = append(filteredRouteCIDRs, r.DestRange)
+		}
+	}
+	log.Debug().Msgf("Filtered routes down to %v applicable routes", len(filteredRouteCIDRs))
 
 	// get first free subnetwork range from rangeconfig
 	availableSubnetworkRanges := rangeConfig.GetAvailableSubnetworkRanges()
-	for _, subnetRange := range availableSubnetworkRanges {
+	for i, subnetRange := range availableSubnetworkRanges {
 		// check if it's in use
 		rangeIsInUse := false
 		for _, snCIDR := range filteredSubnetworkCIDRs {
@@ -183,8 +198,21 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 				break
 			}
 		}
+		for _, rCIDR := range filteredRouteCIDRs {
+			routeIP, _, err := net.ParseCIDR(rCIDR)
+			if err != nil {
+				return subnetworkRange, err
+			}
+
+			if subnetRange.Contains(routeIP) {
+				log.Debug().Msgf("Range %v is already used by route with cidr %v", subnetRange, routeIP)
+				rangeIsInUse = true
+				break
+			}
+		}
 
 		if !rangeIsInUse {
+			log.Debug().Msgf("%vth range %v of total range %v is available, suggesting it", i, subnetRange, rangeConfig.NetworkCIDR)
 			return subnetRange, nil
 		}
 	}

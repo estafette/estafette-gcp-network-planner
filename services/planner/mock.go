@@ -52,10 +52,10 @@ func (mr *MockServiceMockRecorder) LoadConfig(ctx interface{}) *gomock.Call {
 }
 
 // Suggest mocks base method
-func (m *MockService) Suggest(ctx context.Context, filter, region string, rangeTypes ...network.RangeType) (map[network.Type]*net.IPNet, error) {
+func (m *MockService) Suggest(ctx context.Context, region, filter string, networkTypes ...network.Type) (map[network.Type]*net.IPNet, error) {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{ctx, filter, region}
-	for _, a := range rangeTypes {
+	varargs := []interface{}{ctx, region, filter}
+	for _, a := range networkTypes {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "Suggest", varargs...)
@@ -65,9 +65,9 @@ func (m *MockService) Suggest(ctx context.Context, filter, region string, rangeT
 }
 
 // Suggest indicates an expected call of Suggest
-func (mr *MockServiceMockRecorder) Suggest(ctx, filter, region interface{}, rangeTypes ...interface{}) *gomock.Call {
+func (mr *MockServiceMockRecorder) Suggest(ctx, region, filter interface{}, networkTypes ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{ctx, filter, region}, rangeTypes...)
+	varargs := append([]interface{}{ctx, region, filter}, networkTypes...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suggest", reflect.TypeOf((*MockService)(nil).Suggest), varargs...)
 }
 

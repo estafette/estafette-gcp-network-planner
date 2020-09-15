@@ -42,6 +42,7 @@ type Client interface {
 	GetProjectByLabels(ctx context.Context, filters []string) (projects []*crmv1.Project, err error)
 	GetProjectNetworks(ctx context.Context, projects []*crmv1.Project) (networks []*computev1.Network, err error)
 	GetProjectSubnetworks(ctx context.Context, projects []*crmv1.Project) (subnetworks []*computev1.Subnetwork, err error)
+	GetProjectRoutes(ctx context.Context, projects []*crmv1.Project) (routes []*computev1.Route, err error)
 }
 
 // NewClient returns a new gcp.Client
@@ -100,8 +101,7 @@ func (c *client) GetProjectByLabels(ctx context.Context, filters []string) (proj
 			// set filter
 			listCall.Filter(strings.Join(filters, " "))
 
-			listCall.Context(ctx)
-			resp, err = listCall.Do()
+			resp, err = listCall.Context(ctx).Do()
 			if err != nil {
 				return err
 			}
@@ -140,8 +140,7 @@ func (c *client) getProjectNetworks(ctx context.Context, projectID string) (netw
 			if nextPageToken != "" {
 				listCall.PageToken(nextPageToken)
 			}
-			listCall.Context(ctx)
-			resp, err = listCall.Do()
+			resp, err = listCall.Context(ctx).Do()
 			if err != nil {
 				return err
 			}
@@ -239,8 +238,7 @@ func (c *client) getProjectSubnetworks(ctx context.Context, projectID string) (s
 			if nextPageToken != "" {
 				listCall.PageToken(nextPageToken)
 			}
-			listCall.Context(ctx)
-			resp, err = listCall.Do()
+			resp, err = listCall.Context(ctx).Do()
 			if err != nil {
 				return err
 			}
@@ -324,6 +322,104 @@ func (c *client) GetProjectSubnetworks(ctx context.Context, projects []*crmv1.Pr
 			return
 		}
 		subnetworks = append(subnetworks, r.Subnetworks...)
+	}
+
+	return
+}
+
+func (c *client) getProjectRoutes(ctx context.Context, projectID string) (routes []*computev1.Route, err error) {
+
+	log.Info().Msgf("Retrieving routes for project %v...", projectID)
+
+	nextPageToken := ""
+	for {
+		var resp *computev1.RouteList
+		err = c.substituteErrorsWithPredefinedErrors(foundation.Retry(func() error {
+
+			listCall := c.computev1Service.Routes.List(projectID)
+			if nextPageToken != "" {
+				listCall.PageToken(nextPageToken)
+			}
+			resp, err = listCall.Context(ctx).Do()
+			if err != nil {
+				return err
+			}
+			return nil
+		}, c.getRetryOptions()...))
+		if err != nil && !errors.Is(err, ErrAPIForbidden) {
+			return routes, fmt.Errorf("Can't get project routes for project id %v: %w", projectID, err)
+		}
+		if err != nil && errors.Is(err, ErrAPIForbidden) {
+			return routes, nil
+		}
+
+		routes = append(routes, resp.Items...)
+
+		if resp.NextPageToken == "" {
+			break
+		}
+		nextPageToken = resp.NextPageToken
+	}
+
+	log.Debug().Msgf("Retrieved %v routes for project %v", len(routes), projectID)
+
+	return
+}
+
+func (c *client) GetProjectRoutes(ctx context.Context, projects []*crmv1.Project) (routes []*computev1.Route, err error) {
+
+	// http://jmoiron.net/blog/limiting-concurrency-in-go/
+	semaphore := make(chan bool, c.concurrency)
+	cancelled := false
+
+	resultChannel := make(chan struct {
+		Routes []*computev1.Route
+		Err    error
+	}, len(projects))
+
+	for _, p := range projects {
+		select {
+		// try to fill semaphore up to it's full size otherwise wait for a routine to finish
+		case semaphore <- true:
+			go func(ctx context.Context, p *crmv1.Project) {
+				// lower semaphore once the routine's finished, making room for another one to start
+				defer func() { <-semaphore }()
+
+				routes, err := c.getProjectRoutes(ctx, p.ProjectId)
+
+				resultChannel <- struct {
+					Routes []*computev1.Route
+					Err    error
+				}{routes, err}
+			}(ctx, p)
+
+		case <-ctx.Done():
+			log.Info().Msg("User has canceled execution, stopping retrieval of routes...")
+			cancelled = true
+		}
+		if cancelled {
+			log.Info().Msg("User has canceled execution, waiting for pending retrieval of routes to finish...")
+			break
+		}
+	}
+
+	// try to fill semaphore up to it's full size which only succeeds if all routines have finished or execution has been canceled
+	for i := 0; i < cap(semaphore); i++ {
+		semaphore <- true
+	}
+
+	if cancelled {
+		log.Info().Msg("User has canceled execution, checking retrieved routes...")
+	}
+
+	// check for errors and aggregate all routes
+	close(resultChannel)
+	for r := range resultChannel {
+		if r.Err != nil {
+			err = r.Err
+			return
+		}
+		routes = append(routes, r.Routes...)
 	}
 
 	return

@@ -79,3 +79,18 @@ func (mr *MockClientMockRecorder) GetProjectSubnetworks(ctx, projects interface{
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProjectSubnetworks", reflect.TypeOf((*MockClient)(nil).GetProjectSubnetworks), ctx, projects)
 }
+
+// GetProjectRoutes mocks base method
+func (m *MockClient) GetProjectRoutes(ctx context.Context, projects []*cloudresourcemanager.Project) ([]*compute.Route, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProjectRoutes", ctx, projects)
+	ret0, _ := ret[0].([]*compute.Route)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProjectRoutes indicates an expected call of GetProjectRoutes
+func (mr *MockClientMockRecorder) GetProjectRoutes(ctx, projects interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProjectRoutes", reflect.TypeOf((*MockClient)(nil).GetProjectRoutes), ctx, projects)
+}
