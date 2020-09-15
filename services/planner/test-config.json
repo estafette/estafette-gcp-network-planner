@@ -8,12 +8,6 @@
       "comment": "Large enough to fit (total number of nodes X 256) IP addresses",
       "subnet_mask": 16
     }, {
-      "type": "pod",
-      "region": "europe-west1",
-      "ip_cidr_range_type": "secondary",
-      "network": "10.128.0.0/9",
-      "subnet_mask": 14
-    }, {
       "type": "node",
       "region": "europe-west1",
       "ip_cidr_range_type": "primary",

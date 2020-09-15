@@ -85,6 +85,10 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 	if len(networkTypes) == 0 {
 		networkTypes = []networkv1.Type{
 			networkv1.TypeNode,
+			networkv1.TypePod,
+			networkv1.TypeService,
+			networkv1.TypeMaster,
+			networkv1.TypeOther,
 		}
 	}
 
@@ -108,6 +112,8 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 
 func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
 
+	log.Debug().Msgf("Suggesting subnetwork range for region %v and network type %v (with %v range configs and %v subnetworks)...", region, networkType, len(rangeConfigs), len(subnetworks))
+
 	// find range config for region and network type
 	filteredRangeConfigs := []networkv1.RangeConfig{}
 	for _, rc := range rangeConfigs {
@@ -124,19 +130,42 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 		return subnetworkRange, fmt.Errorf("Multiple ranges have been configured for type %v and region %v, can't suggest a subnetwork range", networkType, region)
 	}
 
-	rangeConfig := rangeConfigs[0]
+	rangeConfig := filteredRangeConfigs[0]
 
 	// filter subnetworks on whether they're contained in the range config network CIDR
 	filteredSubnetworkCIDRs := []string{}
 	for _, sn := range subnetworks {
-		contains, err := rangeConfig.ContainsCIDR(sn.IpCidrRange)
-		if err != nil {
-			return subnetworkRange, err
+
+		if !strings.HasSuffix(sn.Region, "/"+rangeConfig.Region) {
+			continue
 		}
-		if contains && strings.HasSuffix(sn.Region, "/"+rangeConfig.Region) {
-			filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
+
+		switch rangeConfig.RangeType {
+		case networkv1.RangeTypePrimary:
+			contains, err := rangeConfig.ContainsCIDR(sn.IpCidrRange)
+			if err != nil {
+				return subnetworkRange, err
+			}
+			if contains {
+				filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
+			}
+
+		case networkv1.RangeTypeSecondary:
+			for _, sr := range sn.SecondaryIpRanges {
+				contains, err := rangeConfig.ContainsCIDR(sr.IpCidrRange)
+				if err != nil {
+					return subnetworkRange, err
+				}
+				if contains {
+					filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
+				}
+			}
 		}
+
 	}
+
+	log.Debug().Msgf("Filtered subnetworks down to %v applicable subnetworks", len(filteredSubnetworkCIDRs))
+
 	// get first free subnetwork range from rangeconfig
 	availableSubnetworkRanges := rangeConfig.GetAvailableSubnetworkRanges()
 	for _, subnetRange := range availableSubnetworkRanges {
