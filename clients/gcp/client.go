@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -99,6 +100,7 @@ func (c *client) GetProjectByLabels(ctx context.Context, filters []string) (proj
 			// set filter
 			listCall.Filter(strings.Join(filters, " "))
 
+			listCall.Context(ctx)
 			resp, err = listCall.Do()
 			if err != nil {
 				return err
@@ -138,16 +140,19 @@ func (c *client) getProjectNetworks(ctx context.Context, projectID string) (netw
 			if nextPageToken != "" {
 				listCall.PageToken(nextPageToken)
 			}
+			listCall.Context(ctx)
 			resp, err = listCall.Do()
 			if err != nil {
 				return err
 			}
 			return nil
 		}, c.getRetryOptions()...))
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrAPIForbidden) {
 			return networks, fmt.Errorf("Can't get project networks for project id %v: %w", projectID, err)
 		}
-
+		if err != nil && errors.Is(err, ErrAPIForbidden) {
+			return networks, nil
+		}
 		networks = append(networks, resp.Items...)
 
 		if resp.NextPageToken == "" {
@@ -165,6 +170,7 @@ func (c *client) GetProjectNetworks(ctx context.Context, projects []*crmv1.Proje
 
 	// http://jmoiron.net/blog/limiting-concurrency-in-go/
 	semaphore := make(chan bool, c.concurrency)
+	cancelled := false
 
 	resultChannel := make(chan struct {
 		Networks []*computev1.Network
@@ -172,25 +178,39 @@ func (c *client) GetProjectNetworks(ctx context.Context, projects []*crmv1.Proje
 	}, len(projects))
 
 	for _, p := range projects {
+		select {
 		// try to fill semaphore up to it's full size otherwise wait for a routine to finish
-		semaphore <- true
+		case semaphore <- true:
 
-		go func(ctx context.Context, p *crmv1.Project) {
-			// lower semaphore once the routine's finished, making room for another one to start
-			defer func() { <-semaphore }()
+			go func(ctx context.Context, p *crmv1.Project) {
+				// lower semaphore once the routine's finished, making room for another one to start
+				defer func() { <-semaphore }()
 
-			networks, err := c.getProjectNetworks(ctx, p.ProjectId)
+				networks, err := c.getProjectNetworks(ctx, p.ProjectId)
 
-			resultChannel <- struct {
-				Networks []*computev1.Network
-				Err      error
-			}{networks, err}
-		}(ctx, p)
+				resultChannel <- struct {
+					Networks []*computev1.Network
+					Err      error
+				}{networks, err}
+			}(ctx, p)
+
+		case <-ctx.Done():
+			log.Info().Msg("User has canceled execution, stopping retrieval of networks...")
+			cancelled = true
+		}
+		if cancelled {
+			log.Info().Msg("User has canceled execution, waiting for pending retrieval of networks to finish...")
+			break
+		}
 	}
 
-	// try to fill semaphore up to it's full size which only succeeds if all routines have finished
+	// try to fill semaphore up to it's full size which only succeeds if all routines have finished or execution has been canceled
 	for i := 0; i < cap(semaphore); i++ {
 		semaphore <- true
+	}
+
+	if cancelled {
+		log.Info().Msg("User has canceled execution, checking retrieved networks...")
 	}
 
 	// check for errors and aggregate all networks
@@ -219,14 +239,18 @@ func (c *client) getProjectSubnetworks(ctx context.Context, projectID string) (s
 			if nextPageToken != "" {
 				listCall.PageToken(nextPageToken)
 			}
+			listCall.Context(ctx)
 			resp, err = listCall.Do()
 			if err != nil {
 				return err
 			}
 			return nil
 		}, c.getRetryOptions()...))
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrAPIForbidden) {
 			return subnetworks, fmt.Errorf("Can't get project subnetworks for project id %v: %w", projectID, err)
+		}
+		if err != nil && errors.Is(err, ErrAPIForbidden) {
+			return subnetworks, nil
 		}
 
 		for _, v := range resp.Items {
@@ -250,6 +274,7 @@ func (c *client) GetProjectSubnetworks(ctx context.Context, projects []*crmv1.Pr
 
 	// http://jmoiron.net/blog/limiting-concurrency-in-go/
 	semaphore := make(chan bool, c.concurrency)
+	cancelled := false
 
 	resultChannel := make(chan struct {
 		Subnetworks []*computev1.Subnetwork
@@ -257,25 +282,38 @@ func (c *client) GetProjectSubnetworks(ctx context.Context, projects []*crmv1.Pr
 	}, len(projects))
 
 	for _, p := range projects {
+		select {
 		// try to fill semaphore up to it's full size otherwise wait for a routine to finish
-		semaphore <- true
+		case semaphore <- true:
+			go func(ctx context.Context, p *crmv1.Project) {
+				// lower semaphore once the routine's finished, making room for another one to start
+				defer func() { <-semaphore }()
 
-		go func(ctx context.Context, p *crmv1.Project) {
-			// lower semaphore once the routine's finished, making room for another one to start
-			defer func() { <-semaphore }()
+				subnetworks, err := c.getProjectSubnetworks(ctx, p.ProjectId)
 
-			subnetworks, err := c.getProjectSubnetworks(ctx, p.ProjectId)
+				resultChannel <- struct {
+					Subnetworks []*computev1.Subnetwork
+					Err         error
+				}{subnetworks, err}
+			}(ctx, p)
 
-			resultChannel <- struct {
-				Subnetworks []*computev1.Subnetwork
-				Err         error
-			}{subnetworks, err}
-		}(ctx, p)
+		case <-ctx.Done():
+			log.Info().Msg("User has canceled execution, stopping retrieval of subnetworks...")
+			cancelled = true
+		}
+		if cancelled {
+			log.Info().Msg("User has canceled execution, waiting for pending retrieval of subnetworks to finish...")
+			break
+		}
 	}
 
-	// try to fill semaphore up to it's full size which only succeeds if all routines have finished
+	// try to fill semaphore up to it's full size which only succeeds if all routines have finished or execution has been canceled
 	for i := 0; i < cap(semaphore); i++ {
 		semaphore <- true
+	}
+
+	if cancelled {
+		log.Info().Msg("User has canceled execution, checking retrieved subnetworks...")
 	}
 
 	// check for errors and aggregate all subnetworks
@@ -298,7 +336,7 @@ func (c *client) isRetryableErrorCustomOption() foundation.RetryOption {
 			case *googleapi.Error:
 				// Retry on 429 and 5xx, according to
 				// https://cloud.google.com/storage/docs/exponential-backoff.
-				return e.Code == http.StatusTooManyRequests || (e.Code >= 500 && e.Code < 600) || e.Code == http.StatusForbidden
+				return e.Code == http.StatusTooManyRequests || (e.Code >= 500 && e.Code < 600)
 			case *url.Error:
 				// Retry socket-level errors ECONNREFUSED and ENETUNREACH (from syscall).
 				// Unfortunately the error type is unexported, so we resort to string

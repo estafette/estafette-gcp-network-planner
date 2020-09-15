@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -45,6 +46,9 @@ func Execute() {
 
 	foundation.InitLoggingByFormatSilent(foundation.NewApplicationInfo(appgroup, app, version, branch, revision, buildDate), foundation.LogFormatConsole)
 
+	// create context to cancel commands on sigterm
+	ctx := foundation.InitCancellationContext(context.Background())
+
 	if verbose {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		log.Debug().Msg("Verbose mode enabled")
@@ -53,7 +57,7 @@ func Execute() {
 		// log.Info().Msg("Verbose mode disabled")
 	}
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
