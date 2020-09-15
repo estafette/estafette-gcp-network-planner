@@ -184,6 +184,46 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		assert.Equal(t, "172.30.0.0/15", subnetworkRange.String())
 	})
 
+	t.Run("ReturnsFirstAvailableRangeIfSomeOfThemAreInUseBySecondarySubnetRanges", func(t *testing.T) {
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		gcpClientMock := gcp.NewMockClient(ctrl)
+
+		ctx := context.Background()
+		service, err := NewService(ctx, gcpClientMock, "./test-config.json")
+
+		rangeConfigs := []networkv1.RangeConfig{
+			{
+				Type:        networkv1.TypePod,
+				Region:      "europe-west1",
+				RangeType:   networkv1.RangeTypeSecondary,
+				NetworkCIDR: "10.0.0.0/9",
+				SubnetMask:  16,
+			},
+		}
+		subnetworks := []*computev1.Subnetwork{
+			{
+				IpCidrRange: "172.28.0.0/15",
+				Region:      "https://www.googleapis.com/compute/v1/projects/project-id/regions/europe-west1",
+				SecondaryIpRanges: []*computev1.SubnetworkSecondaryRange{
+					{
+						IpCidrRange: "10.0.0.0/16",
+					},
+				},
+			},
+		}
+		routes := []*computev1.Route{}
+		region := "europe-west1"
+		networkType := networkv1.TypePod
+
+		// act
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+
+		assert.Nil(t, err)
+		assert.Equal(t, "10.1.0.0/16", subnetworkRange.String())
+	})
+
 	t.Run("ReturnsErrorWhenMoreOneRangeConfigMatchesAndAllPossibleSubnetsAreInUseByRoutes", func(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
@@ -252,10 +292,11 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
 
 		assert.Nil(t, err)
+		assert.NotNil(t, subnetworkRange)
 		assert.Equal(t, "172.30.0.0/15", subnetworkRange.String())
 	})
 
-	t.Run("ReturnsFirsteRangeIfNoneOfThemAreInUse", func(t *testing.T) {
+	t.Run("ReturnsFirstRangeIfNoneOfThemAreInUse", func(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -282,6 +323,42 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
 
 		assert.Nil(t, err)
+		assert.NotNil(t, subnetworkRange)
+		assert.Equal(t, "172.28.0.0/15", subnetworkRange.String())
+	})
+
+	t.Run("ExludeRoutesWithAllZeroes", func(t *testing.T) {
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		gcpClientMock := gcp.NewMockClient(ctrl)
+
+		ctx := context.Background()
+		service, err := NewService(ctx, gcpClientMock, "./test-config.json")
+
+		rangeConfigs := []networkv1.RangeConfig{
+			{
+				Type:        networkv1.TypeNode,
+				Region:      "europe-west1",
+				RangeType:   networkv1.RangeTypePrimary,
+				NetworkCIDR: "172.28.0.0/14",
+				SubnetMask:  15,
+			},
+		}
+		subnetworks := []*computev1.Subnetwork{}
+		routes := []*computev1.Route{
+			{
+				DestRange: "0.0.0.0/0",
+			},
+		}
+		region := "europe-west1"
+		networkType := networkv1.TypeNode
+
+		// act
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+
+		assert.Nil(t, err)
+		assert.NotNil(t, subnetworkRange)
 		assert.Equal(t, "172.28.0.0/15", subnetworkRange.String())
 	})
 }

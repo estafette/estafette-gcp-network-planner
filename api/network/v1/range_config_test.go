@@ -102,35 +102,6 @@ func TestRangeConfigValidate(t *testing.T) {
 	})
 }
 
-func TestContainsCIDR(t *testing.T) {
-
-	t.Run("ReturnsFalseIfSubnetworkCIDRIsNotContainedByNetworkCIDR", func(t *testing.T) {
-
-		rangeConfig := getValidRangeConfig()
-		rangeConfig.NetworkCIDR = "172.28.0.0/14"
-		subnetworkCIDR := "172.24.0.0/22"
-
-		// act
-		contains, err := rangeConfig.ContainsCIDR(subnetworkCIDR)
-
-		assert.Nil(t, err)
-		assert.False(t, contains)
-	})
-
-	t.Run("ReturnsTrueIfSubnetworkCIDRIsContainedByNetworkCIDR", func(t *testing.T) {
-
-		rangeConfig := getValidRangeConfig()
-		rangeConfig.NetworkCIDR = "172.28.0.0/14"
-		subnetworkCIDR := "172.28.0.0/16"
-
-		// act
-		contains, err := rangeConfig.ContainsCIDR(subnetworkCIDR)
-
-		assert.Nil(t, err)
-		assert.True(t, contains)
-	})
-}
-
 func TestGetMaxSubnetworkRanges(t *testing.T) {
 
 	t.Run("Returns2IfMaskHasDifferenceOf1", func(t *testing.T) {

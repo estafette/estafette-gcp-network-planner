@@ -54,7 +54,6 @@ func Execute() {
 		log.Debug().Msg("Verbose mode enabled")
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-		// log.Info().Msg("Verbose mode disabled")
 	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

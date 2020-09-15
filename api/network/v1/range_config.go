@@ -48,21 +48,6 @@ func (rc *RangeConfig) Validate() (valid bool, warnings []string, errors []strin
 	return len(errors) == 0, warnings, errors
 }
 
-func (rc *RangeConfig) ContainsCIDR(subnetworkCIDR string) (contains bool, err error) {
-
-	_, networkIPnet, err := net.ParseCIDR(rc.NetworkCIDR)
-	if err != nil {
-		return false, err
-	}
-
-	subnetworkIP, _, err := net.ParseCIDR(subnetworkCIDR)
-	if err != nil {
-		return false, err
-	}
-
-	return networkIPnet.Contains(subnetworkIP), nil
-}
-
 func (rc *RangeConfig) GetMaxSubnetworkRanges() int {
 	_, networkIPnet, err := net.ParseCIDR(rc.NetworkCIDR)
 	if err != nil {

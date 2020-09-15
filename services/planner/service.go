@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/apparentlymart/go-cidr/cidr"
 	networkv1 "github.com/estafette/estafette-gcp-network-planner/api/network/v1"
 	"github.com/estafette/estafette-gcp-network-planner/clients/gcp"
 	"github.com/rs/zerolog/log"
@@ -146,22 +147,22 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 
 		switch rangeConfig.RangeType {
 		case networkv1.RangeTypePrimary:
-			contains, err := rangeConfig.ContainsCIDR(sn.IpCidrRange)
-			if err != nil {
-				return subnetworkRange, err
+			overlap, overlapErr := s.rangesOverlap(rangeConfig.NetworkCIDR, sn.IpCidrRange)
+			if overlapErr != nil {
+				return nil, overlapErr
 			}
-			if contains {
+			if overlap {
 				filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
 			}
 
 		case networkv1.RangeTypeSecondary:
 			for _, sr := range sn.SecondaryIpRanges {
-				contains, err := rangeConfig.ContainsCIDR(sr.IpCidrRange)
-				if err != nil {
-					return subnetworkRange, err
+				overlap, overlapErr := s.rangesOverlap(rangeConfig.NetworkCIDR, sr.IpCidrRange)
+				if overlapErr != nil {
+					return nil, overlapErr
 				}
-				if contains {
-					filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sn.IpCidrRange)
+				if overlap {
+					filteredSubnetworkCIDRs = append(filteredSubnetworkCIDRs, sr.IpCidrRange)
 				}
 			}
 		}
@@ -171,11 +172,15 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 	// filter routes on whether they're contained in the range config network CIDR
 	filteredRouteCIDRs := []string{}
 	for _, r := range routes {
-		contains, err := rangeConfig.ContainsCIDR(r.DestRange)
-		if err != nil {
-			return subnetworkRange, err
+		if r.DestRange == "0.0.0.0/0" {
+			continue
 		}
-		if contains {
+
+		overlap, overlapErr := s.rangesOverlap(rangeConfig.NetworkCIDR, r.DestRange)
+		if overlapErr != nil {
+			return nil, overlapErr
+		}
+		if overlap {
 			filteredRouteCIDRs = append(filteredRouteCIDRs, r.DestRange)
 		}
 	}
@@ -184,30 +189,31 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 	// get first free subnetwork range from rangeconfig
 	availableSubnetworkRanges := rangeConfig.GetAvailableSubnetworkRanges()
 	for i, subnetRange := range availableSubnetworkRanges {
-		// check if it's in use
+		// check if it's in use by any of the filtered subnets
 		rangeIsInUse := false
 		for _, snCIDR := range filteredSubnetworkCIDRs {
-			subnetworkIP, _, err := net.ParseCIDR(snCIDR)
-			if err != nil {
-				return subnetworkRange, err
+			overlap, overlapErr := s.rangesOverlap(subnetRange.String(), snCIDR)
+			if overlapErr != nil {
+				return nil, overlapErr
 			}
-
-			if subnetRange.Contains(subnetworkIP) {
+			if overlap {
 				log.Debug().Msgf("Range %v is already used by subnet with cidr %v", subnetRange, snCIDR)
 				rangeIsInUse = true
 				break
 			}
 		}
-		for _, rCIDR := range filteredRouteCIDRs {
-			routeIP, _, err := net.ParseCIDR(rCIDR)
-			if err != nil {
-				return subnetworkRange, err
-			}
-
-			if subnetRange.Contains(routeIP) {
-				log.Debug().Msgf("Range %v is already used by route with cidr %v", subnetRange, routeIP)
-				rangeIsInUse = true
-				break
+		if !rangeIsInUse {
+			// check if it's in use by any of the filtered routes
+			for _, rCIDR := range filteredRouteCIDRs {
+				overlap, overlapErr := s.rangesOverlap(subnetRange.String(), rCIDR)
+				if overlapErr != nil {
+					return nil, overlapErr
+				}
+				if overlap {
+					log.Debug().Msgf("Range %v is already used by route with cidr %v", subnetRange, rCIDR)
+					rangeIsInUse = true
+					break
+				}
 			}
 		}
 
@@ -218,4 +224,24 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 	}
 
 	return subnetworkRange, fmt.Errorf("All of the possible %v subnets of range %v are already in use", len(availableSubnetworkRanges), rangeConfig.NetworkCIDR)
+}
+
+func (s *service) rangesOverlap(cidrA, cidrB string) (overlap bool, err error) {
+
+	_, ipnetA, err := net.ParseCIDR(cidrA)
+	if err != nil {
+		return false, fmt.Errorf("Parsing %v failed", cidrA)
+	}
+	firstA, lastA := cidr.AddressRange(ipnetA)
+
+	_, ipnetB, err := net.ParseCIDR(cidrB)
+	if err != nil {
+		return false, fmt.Errorf("Parsing %v failed", cidrB)
+	}
+	firstB, lastB := cidr.AddressRange(ipnetB)
+
+	return ipnetA.Contains(firstB) ||
+		ipnetA.Contains(lastB) ||
+		ipnetB.Contains(firstA) ||
+		ipnetB.Contains(lastA), nil
 }
