@@ -23,7 +23,6 @@ func TestSuggest(t *testing.T) {
 		ctx := context.Background()
 		service, err := NewService(ctx, gcpClientMock, "./test-config.json")
 		filter := "labels.environment=dev"
-		region := "europe-west1"
 
 		projects := []*crmv1.Project{}
 
@@ -43,7 +42,7 @@ func TestSuggest(t *testing.T) {
 			Return([]*computev1.Route{}, nil)
 
 		// act
-		_, err = service.Suggest(ctx, region, filter)
+		_, err = service.Suggest(ctx, filter)
 
 		assert.Nil(t, err)
 	})
@@ -63,14 +62,13 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{}
 		subnetworks := []*computev1.Subnetwork{}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.NotNil(t, err)
-		assert.Equal(t, "No ranges have been configured for type node and region europe-west1, can't suggest a subnetwork range", err.Error())
+		assert.Equal(t, "No ranges have been configured for type node, can't suggest a subnetwork range", err.Error())
 	})
 
 	t.Run("ReturnsErrorWhenMoreThanOneRangeConfigsMatchRegionAndNetworkType", func(t *testing.T) {
@@ -85,14 +83,12 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  21,
 			},
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypeSecondary,
 				NetworkCIDR: "10.128.0.0/9",
 				SubnetMask:  14,
@@ -100,14 +96,13 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		}
 		subnetworks := []*computev1.Subnetwork{}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.NotNil(t, err)
-		assert.Equal(t, "Multiple ranges have been configured for type node and region europe-west1, can't suggest a subnetwork range", err.Error())
+		assert.Equal(t, "Multiple ranges have been configured for type node, can't suggest a subnetwork range", err.Error())
 	})
 
 	t.Run("ReturnsErrorWhenMoreOneRangeConfigMatchesAndAllPossibleSubnetsAreInUseBySubnets", func(t *testing.T) {
@@ -122,7 +117,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -139,11 +133,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 			},
 		}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.NotNil(t, err)
 		assert.Equal(t, "All of the possible 2 subnets of range 172.28.0.0/14 are already in use", err.Error())
@@ -161,7 +154,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -174,11 +166,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 			},
 		}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.Nil(t, err)
 		assert.Equal(t, "172.30.0.0/15", subnetworkRange.String())
@@ -196,7 +187,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypePod,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypeSecondary,
 				NetworkCIDR: "10.0.0.0/9",
 				SubnetMask:  16,
@@ -214,11 +204,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 			},
 		}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypePod
 
 		// act
-		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.Nil(t, err)
 		assert.Equal(t, "10.1.0.0/16", subnetworkRange.String())
@@ -236,7 +225,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -251,11 +239,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 				DestRange: "172.30.0.0/15",
 			},
 		}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		_, err = service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.NotNil(t, err)
 		assert.Equal(t, "All of the possible 2 subnets of range 172.28.0.0/14 are already in use", err.Error())
@@ -273,7 +260,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -285,11 +271,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 				DestRange: "172.28.0.0/15",
 			},
 		}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.Nil(t, err)
 		assert.NotNil(t, subnetworkRange)
@@ -308,7 +293,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -316,11 +300,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		}
 		subnetworks := []*computev1.Subnetwork{}
 		routes := []*computev1.Route{}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.Nil(t, err)
 		assert.NotNil(t, subnetworkRange)
@@ -339,7 +322,6 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 		rangeConfigs := []networkv1.RangeConfig{
 			{
 				Type:        networkv1.TypeNode,
-				Region:      "europe-west1",
 				RangeType:   networkv1.RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  15,
@@ -351,11 +333,10 @@ func TestSuggestSingleNetworkRange(t *testing.T) {
 				DestRange: "0.0.0.0/0",
 			},
 		}
-		region := "europe-west1"
 		networkType := networkv1.TypeNode
 
 		// act
-		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, region, networkType)
+		subnetworkRange, err := service.SuggestSingleNetworkRange(ctx, rangeConfigs, subnetworks, routes, networkType)
 
 		assert.Nil(t, err)
 		assert.NotNil(t, subnetworkRange)

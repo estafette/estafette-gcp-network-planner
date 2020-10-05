@@ -10,7 +10,6 @@ import (
 
 type RangeConfig struct {
 	Type        Type      `json:"type"`
-	Region      string    `json:"region"`
 	RangeType   RangeType `json:"ip_cidr_range_type"`
 	NetworkCIDR string    `json:"network"`
 	Comment     string    `json:"comment"`

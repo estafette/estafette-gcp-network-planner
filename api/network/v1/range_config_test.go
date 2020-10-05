@@ -149,7 +149,6 @@ func TestGetAvailableSubnetworkRanges(t *testing.T) {
 func getValidRangeConfig() RangeConfig {
 	return RangeConfig{
 		Type:        TypeNode,
-		Region:      "europe-west1",
 		RangeType:   RangeTypePrimary,
 		NetworkCIDR: "172.28.0.0/14",
 		SubnetMask:  21,

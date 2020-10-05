@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"strings"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	networkv1 "github.com/estafette/estafette-gcp-network-planner/api/network/v1"
@@ -18,8 +17,8 @@ import (
 //go:generate mockgen -package=planner -destination ./mock.go -source=service.go
 type Service interface {
 	LoadConfig(ctx context.Context) (config *networkv1.Config, err error)
-	Suggest(ctx context.Context, region, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error)
-	SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error)
+	Suggest(ctx context.Context, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error)
+	SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error)
 }
 
 func NewService(ctx context.Context, gcpClient gcp.Client, configPath string) (Service, error) {
@@ -60,7 +59,7 @@ func (s *service) LoadConfig(ctx context.Context) (config *networkv1.Config, err
 	return
 }
 
-func (s *service) Suggest(ctx context.Context, region, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error) {
+func (s *service) Suggest(ctx context.Context, filter string, networkTypes ...networkv1.Type) (subnetsMap map[networkv1.Type]*net.IPNet, err error) {
 
 	config, err := s.LoadConfig(ctx)
 	if err != nil {
@@ -101,7 +100,7 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 	// get suggested subnets
 	subnetsMap = map[networkv1.Type]*net.IPNet{}
 	for _, t := range networkTypes {
-		subnetRange, err := s.SuggestSingleNetworkRange(ctx, config.RangeConfigs, subnetworks, routes, region, t)
+		subnetRange, err := s.SuggestSingleNetworkRange(ctx, config.RangeConfigs, subnetworks, routes, t)
 		if err != nil {
 			return subnetsMap, err
 		}
@@ -116,24 +115,24 @@ func (s *service) Suggest(ctx context.Context, region, filter string, networkTyp
 	return
 }
 
-func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, region string, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
+func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []networkv1.RangeConfig, subnetworks []*computev1.Subnetwork, routes []*computev1.Route, networkType networkv1.Type) (subnetworkRange *net.IPNet, err error) {
 
-	log.Debug().Msgf("Suggesting subnetwork range for region %v and network type %v (with %v range configs and %v subnetworks and %v routes)...", region, networkType, len(rangeConfigs), len(subnetworks), len(routes))
+	log.Debug().Msgf("Suggesting subnetwork range for network type %v (with %v range configs and %v subnetworks and %v routes)...", networkType, len(rangeConfigs), len(subnetworks), len(routes))
 
 	// find range config for region and network type
 	filteredRangeConfigs := []networkv1.RangeConfig{}
 	for _, rc := range rangeConfigs {
-		if rc.Type == networkType && rc.Region == region {
+		if rc.Type == networkType {
 			filteredRangeConfigs = append(filteredRangeConfigs, rc)
 		}
 	}
 
 	if len(filteredRangeConfigs) == 0 {
-		return subnetworkRange, fmt.Errorf("No ranges have been configured for type %v and region %v, can't suggest a subnetwork range", networkType, region)
+		return subnetworkRange, fmt.Errorf("No ranges have been configured for type %v, can't suggest a subnetwork range", networkType)
 	}
 
 	if len(filteredRangeConfigs) > 1 {
-		return subnetworkRange, fmt.Errorf("Multiple ranges have been configured for type %v and region %v, can't suggest a subnetwork range", networkType, region)
+		return subnetworkRange, fmt.Errorf("Multiple ranges have been configured for type %v, can't suggest a subnetwork range", networkType)
 	}
 
 	rangeConfig := filteredRangeConfigs[0]
@@ -141,10 +140,6 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 	// filter subnetworks on whether they're contained in the range config network CIDR
 	filteredSubnetworkCIDRs := []string{}
 	for _, sn := range subnetworks {
-		if !strings.HasSuffix(sn.Region, "/"+rangeConfig.Region) {
-			continue
-		}
-
 		switch rangeConfig.RangeType {
 		case networkv1.RangeTypePrimary:
 			overlap, overlapErr := s.rangesOverlap(rangeConfig.NetworkCIDR, sn.IpCidrRange)

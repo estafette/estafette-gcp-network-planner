@@ -25,14 +25,12 @@ func getValidConfig() Config {
 		RangeConfigs: []RangeConfig{
 			{
 				Type:        TypeNode,
-				Region:      "europe-west1",
 				RangeType:   RangeTypePrimary,
 				NetworkCIDR: "172.28.0.0/14",
 				SubnetMask:  21,
 			},
 			{
 				Type:        TypePod,
-				Region:      "europe-west1",
 				RangeType:   RangeTypeSecondary,
 				NetworkCIDR: "10.128.0.0/9",
 				SubnetMask:  14,
