@@ -218,6 +218,18 @@ func (s *service) SuggestSingleNetworkRange(ctx context.Context, rangeConfigs []
 		}
 	}
 
+	log.Debug().Msg("Showing subnetworks and routes to find conflicts")
+
+	log.Debug().Msg("Subnetworks:")
+	for _, sn := range subnetworks {
+		log.Debug().Interface("subnetwork", sn).Msg("")
+	}
+
+	log.Debug().Msg("Routes:")
+	for _, r := range routes {
+		log.Debug().Interface("route", r).Msg("")
+	}
+
 	return subnetworkRange, fmt.Errorf("All of the possible %v subnets of range %v are already in use", len(availableSubnetworkRanges), rangeConfig.NetworkCIDR)
 }
 
