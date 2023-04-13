@@ -16,7 +16,7 @@ version:
 
 stages:
   build:
-    image: golang:1.15.2-alpine3.12
+    image: golang:1.17-alpine
     env:
       CGO_ENABLED: 0
       GOGC: off
@@ -82,7 +82,7 @@ stages:
       status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' == '${ESTAFETTE_BUILD_VERSION}'
 
   push-dev-to-tap:
-    image: golang:1.15.2-alpine3.12
+    image: golang:1.17-alpine
     commands:
     - apk add git
     - cd homebrew-dev
@@ -96,7 +96,7 @@ stages:
       status == 'succeeded' && '${ESTAFETTE_GIT_BRANCH}' != '${ESTAFETTE_BUILD_VERSION}'
 
   push-stable-to-tap:
-    image: golang:1.15.2-alpine3.12
+    image: golang:1.17-alpine
     commands:
     - apk add git
     - cd homebrew-stable
