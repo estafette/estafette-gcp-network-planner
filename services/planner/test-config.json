@@ -7,12 +7,6 @@
       "comment": "Large enough to fit (total number of nodes X 256) IP addresses",
       "subnet_mask": 16
     }, {
-      "type": "pod",
-      "ip_cidr_range_type": "secondary",
-      "network": "10.128.0.0/9",
-      "comment": "Large enough to fit (total number of nodes X 1000) IP addresses",
-      "subnet_mask": 14
-    },{
       "type": "node",
       "ip_cidr_range_type": "primary",
       "comment": "Every subnet has four reserved IP addresses in its primary IP range",
